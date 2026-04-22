@@ -1,24 +1,15 @@
-#include <iostream>
 #include "ollama.hpp"
+#include <iostream>
 
-int main() {
-    // Check if Ollama is running
-    if (!anatheahbr::is_ollama_running()) {
-        std::cout << "Ollama is not running on localhost:11434\n";
-        return 1;
+int main()
+{
+    if (anatheahbr::is_ollama_running())
+    {
+        std::string reply = anatheahbr::ask_ollama("Hello, how are you?", "gemma3:4b");
+        std::cout << reply << std::endl;
     }
-
-    try {
-        std::string prompt = "Explain C++ namespaces in simple terms.";
-
-        std::string response = anatheahbr::ask_ollama(prompt);
-
-        std::cout << "AI Response:\n";
-        std::cout << response << std::endl;
-
-    } catch (const std::exception& e) {
-        std::cout << "Error: " << e.what() << std::endl;
+    else
+    {
+        std::cout << "Ollama is not running" << std::endl;
     }
-
-    return 0;
 }

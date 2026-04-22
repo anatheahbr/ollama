@@ -1,18 +1,9 @@
 #pragma once
 
-// ---- FORCE Windows 10 target (override toolchain) ----
-#ifdef _WIN32
-    #undef _WIN32_WINNT
-    #define _WIN32_WINNT 0x0A00
-#endif
-
-#define CPPHTTPLIB_USE_POLL
-
-#include "httplib.h"
-#include "json.hpp"
-
 #include <string>
 #include <stdexcept>
+#include <cstdio>
+#include "json.hpp"
 
 namespace anatheahbr {
 
@@ -20,15 +11,8 @@ namespace anatheahbr {
 // Check if Ollama running
 // --------------------
 inline bool is_ollama_running() {
-    httplib::Client cli("http://127.0.0.1:11434");
-
-    cli.set_connection_timeout(2); // seconds
-
-    if (auto res = cli.Get("/api/tags")) {
-        return res->status == 200;
-    }
-
-    return false;
+    int result = system("curl -s http://localhost:11434/api/tags > nul 2>&1");
+    return result == 0;
 }
 
 // --------------------
@@ -38,33 +22,50 @@ inline std::string ask_ollama(
     const std::string& prompt,
     const std::string& model = "llama3"
 ) {
-    httplib::Client cli("http://127.0.0.1:11434");
+    using json = nlohmann::json;
 
-    cli.set_connection_timeout(5);
-
-    nlohmann::json body = {
+    // Build JSON safely
+    json req = {
         {"model", model},
         {"prompt", prompt},
         {"stream", false}
     };
 
-    auto res = cli.Post(
-        "/api/generate",
-        body.dump(),
-        "application/json"
-    );
+    std::string json_str = req.dump();
 
-    if (!res) {
-        throw std::runtime_error("Connection to Ollama failed");
+    // IMPORTANT: escape quotes for Windows cmd
+    std::string escaped;
+    for (char c : json_str) {
+        if (c == '"') escaped += "\\\"";
+        else escaped += c;
     }
 
-    if (res->status != 200) {
-        throw std::runtime_error("HTTP error: " + std::to_string(res->status));
+    // Curl command (no file)
+    std::string cmd =
+        "curl -s http://localhost:11434/api/generate "
+        "-H \"Content-Type: application/json\" "
+        "-d \"" + escaped + "\"";
+
+    FILE* pipe = _popen(cmd.c_str(), "r");
+    if (!pipe)
+        throw std::runtime_error("Failed to run curl");
+
+    std::string raw;
+    char buffer[1024];
+
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        raw += buffer;
     }
 
-    nlohmann::json json = nlohmann::json::parse(res->body);
+    _pclose(pipe);
 
-    return json.value("response", "");
+    if (raw.empty())
+        throw std::runtime_error("Empty response from Ollama");
+
+    // Parse JSON response
+    auto json_res = json::parse(raw);
+
+    return json_res.value("response", "");
 }
 
 } // namespace anatheahbr
